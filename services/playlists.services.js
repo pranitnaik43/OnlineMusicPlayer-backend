@@ -34,6 +34,16 @@ const service = {
       res.send({ error: { message: "Operation failed" } });
     }
   },
+  async findPublicPlaylists(req, res) {
+    //get all the public playlists
+    try {
+      var data = await db.playlists.find({ type: "public" }).toArray();
+      return res.send(data);
+    } catch (err) {
+      console.log(err);
+      res.send({ error: { message: "Operation failed" } });
+    }
+  },
   async findById(req, res) {
     //get playlist by id(along with songs data)
     try {
