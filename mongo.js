@@ -5,7 +5,8 @@ const client = new MongoClient(process.env.MONGODB_URL, { useNewUrlParser: true,
 const mongo = {
   users: null,
   songs: null,
-  artists: null,
+  playlists: null,
+
 
   async connect() {
     await client.connect(); // Connecting to DB
@@ -14,7 +15,7 @@ const mongo = {
 
     this.users = db.collection("users");
     this.songs = db.collection("songs");
-    this.artists = db.collection("artists");
+    this.playlists = db.collection("playlists");
   }
 };
 

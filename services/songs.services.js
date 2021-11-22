@@ -13,7 +13,7 @@ const songBody = Joi.object({
   artists: Joi.string().allow(null, '').optional()
 });
 const supportedAudioMimeTypes = ['audio/mp3', 'audio/mpeg'];
-const supportedThumnbnailMimeTypes = ['image/jpeg', 'image/webp'];
+const supportedThumnbnailMimeTypes = ['image/jpeg', 'image/webp', 'image/png'];
 
 //using multer for saving images and songs to storage
 const storage = multer.diskStorage({
@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
     const { error } = await songBody.validate(req.body);
     if (error) cb({ message: error.details[0].message });
 
-    console.log("check",req.body, req.files);
+    // console.log("check",req.body, req.files);
     if (file.fieldname === "song" && supportedAudioMimeTypes.includes(file.mimetype)) {  //audio file
       cb(null, 'public/songs')
     } else if (file.fieldname === "thumbnail" && supportedThumnbnailMimeTypes.includes(file.mimetype)) {  //image file
@@ -39,25 +39,6 @@ const storage = multer.diskStorage({
   }
 })
 const upload = multer({ storage: storage }).any();
-
-const updateProduct = async (productId, productBody) => {
-  try {
-    //check if product exists
-    const data = await db.products.findOne({ _id: new ObjectId(productId) });
-    if(!data) {
-      return { error: { message: "Product does not exist" }};
-    }
-
-    await db.products.updateOne(
-      { _id: new ObjectId(productId) },
-      { $set: { ...productBody } }
-    );
-    return { success: { message: "Product updated successfully" }};
-  } catch(err) {
-    console.log(err);
-    return { error: { message: "Operation failed" }};
-  }
-}
 
 const service = {
   async findAll(req, res) {
@@ -87,9 +68,15 @@ const service = {
         if (err) {
           return res.send({ error: { message: "Error in saving file: "+err.message }});
         }
+
+        //check if song already exists
+        const data = await db.songs.findOne({ name: req.body.name });
+        if(data) {
+          return res.send({ error: { message: "Song already exists" }});
+        }
         
         //check if files were stored
-        if(!req.files) { //this files are added by multer after storing
+        if(!req.files) { //these files are added by multer after storing
           return res.send({ error: { message: "Error in saving file" }});
         }
         req.files.forEach(file => {
@@ -105,12 +92,30 @@ const service = {
   },
   async updateById(req, res) {
     try {
-      // Validate Request Body
-      const { error } = await songBody.validate(req.body);
-      if (error) return res.send({ error: { message: error.details[0].message }});
+      upload(req, res, async (err) => {
+        let songId = req.params.id;
+        // console.log("check123 ", req.body, req.files)
+        if (err) {
+          return res.send({ error: { message: "Error in saving file: "+err.message }});
+        }
 
-      let result = await updateProduct(req.params.id, req.body);
-      res.send(result);
+        //check if song with given id exists
+        const data = await db.songs.findOne({ _id: new ObjectId(songId) });
+        if(!data) {
+          return res.send({ error: { message: "Invalid ID" }});
+        }
+        
+        //add files to body
+        req.files.forEach(file => {
+          req.body[file.fieldname+'details'] = file;
+        });
+
+        await db.songs.updateOne(
+          { _id: new ObjectId(songId) },
+          { $set: { ...req.body } }
+        );
+        res.send({ success: { message: "Song updated successfully" }});
+      })
     } catch(err) {
       console.log(err);
       res.send({ error: { message: "Operation failed" }});
@@ -118,36 +123,67 @@ const service = {
   },
   async deleteById(req, res) {
     try {
-      //check if product exists
-      const data = await db.products.findOne({ _id: new ObjectId(req.params.id) });
+      let songId = req.params.id;
+      //check if song exists
+      const data = await db.songs.findOne({ _id: new ObjectId(songId) });
       if(!data) {
-        return res.send({ error: { message: "Product does not exist" }});
+        return res.send({ error: { message: "Song does not exist" }});
       }
 
       await db.products.deleteOne({ _id: new ObjectId(req.params.id) });
-      res.send({ success: { message: "Product deleted successfully" }});
+      res.send({ success: { message: "Song deleted successfully" }});
     } catch(err) {
       console.log(err);
       res.send({ error: { message: "Operation failed" }});
     }
   },
-  async removeCategoryForProducts(category_id) {
+  async addToPlaylists(req, res) {
     try {
-      const products = await db.products.find().toArray();
-      console.log("check123");
-      await Promise.all(products.map(async product => {
-        let categories = product.category;
-        if(categories) {
-          product.category = categories.filter(id => (id !== category_id));
+      let songId = req.params.id;
+      //check if song exists
+      const data = await db.songs.findOne({ _id: new ObjectId(songId) });
+      if(!data) {
+        return res.send({ error: { message: "Song does not exist" }});
+      }
+
+      let playlists = req.body.playlists;
+      if(!playlists) {
+        return res.send({ error: { message: "Invalid request" }});
+      }
+
+      let failed = [];
+      await Promise.all(playlists.map(async (playlistId) => {
+        //get the playlist
+        let playlist = await db.playlists.findOne({ _id: new ObjectId(playlistId) });
+        if(!playlist) {
+          failed.push({id: playlist, reason: "does not exist"});
         }
-        await updateProduct(product._id, product);
+        //check if playlist belongs to the user
+        if(!playlist.userId===req.userId) {
+          failed.push({id: playlist, reason: "does not have access"});
+          return;
+        }
+        //check if playlist contains the song array
+        if(!playlist.songs) {
+          playlist.songs = [];
+        }
+        //add song if not already present in the playlist
+        if(!playlist.songs.includes(songId)) {
+          playlist.songs.push(songId);
+        }
+        //update the playlist
+        await db.playlists.updateOne(
+          { _id: new ObjectId(playlistId) },
+          { $set: { ...playlist } }
+        );
       }));
+      res.send({ success: { message: "Added to the playlists", failed }});
+
     } catch(err) {
       console.log(err);
       res.send({ error: { message: "Operation failed" }});
     }
   }
-
 };
 
 module.exports = service;

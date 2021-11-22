@@ -9,6 +9,7 @@ const mongo = require("./mongo");
 // Routes
 const authRoutes = require("./routes/auth.routes");
 const songsRoutes = require("./routes/songs.routes");
+const playlistsRoutes = require("./routes/playlists.routes");
 
 //services
 const authService = require("./services/auth.services");
@@ -28,7 +29,6 @@ const PORT = (process.env.PORT) ? (process.env.PORT) : 3001;
     app.use(cors());    // allow Cross-Origin Resource sharing
 
     //allow access to images and songs
-    console.log(path.join(__dirname, 'public', 'images'));
     app.use('/thumbnail', express.static(path.join(__dirname, 'public', 'thumbnails')))
     app.use('/song', express.static(path.join(__dirname, 'public', 'songs')))
 
@@ -37,6 +37,8 @@ const PORT = (process.env.PORT) ? (process.env.PORT) : 3001;
     app.use(authService.validateAccessToken);
     
     app.use("/songs", songsRoutes);
+    app.use("/playlists", playlistsRoutes);
+
 
     app.listen(PORT, () =>
       console.log(`Server running at port ${PORT}`)
