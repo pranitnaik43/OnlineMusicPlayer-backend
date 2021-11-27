@@ -13,6 +13,7 @@ const playlistsRoutes = require("./routes/playlists.routes");
 
 //services
 const authService = require("./services/auth.services");
+const searchService = require("./services/search.services");
 
 const app = express();
 const PORT = (process.env.PORT) ? (process.env.PORT) : 3001;
@@ -28,17 +29,15 @@ const PORT = (process.env.PORT) ? (process.env.PORT) : 3001;
 
     app.use(cors());    // allow Cross-Origin Resource sharing
 
-    //allow access to images and songs
-    app.use('/thumbnail', express.static(path.join(__dirname, 'public', 'thumbnails')))
-    app.use('/song', express.static(path.join(__dirname, 'public', 'songs')))
-
     app.use("/auth", authRoutes);
 
     app.use(authService.validateAccessToken);
     
     app.use("/songs", songsRoutes);
     app.use("/playlists", playlistsRoutes);
-
+    
+    //search songs
+    app.get("/search", searchService.searchSongs);
 
     app.listen(PORT, () =>
       console.log(`Server running at port ${PORT}`)

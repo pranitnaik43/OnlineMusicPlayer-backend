@@ -3,6 +3,7 @@ const Joi = require("joi");
 const multer  = require('multer');
 const path = require("path");
 
+const azureServices = require("./azure.services")
 const db = require("../mongo");
 
 const songBody = Joi.object({
@@ -14,31 +15,35 @@ const songBody = Joi.object({
 });
 const supportedAudioMimeTypes = ['audio/mp3', 'audio/mpeg'];
 const supportedThumnbnailMimeTypes = ['image/jpeg', 'image/webp', 'image/png'];
+const ONE_MEGABYTE = 1024 * 1024;
 
-//using multer for saving images and songs to storage
-const storage = multer.diskStorage({
-  destination: async function (req, file, cb) {
-    //Validate Request Body
-    const { error } = await songBody.validate(req.body);
-    if (error) cb({ message: error.details[0].message });
+//using multer for storing images and songs to memory
+const storage = multer.memoryStorage()
 
-    // console.log("check",req.body, req.files);
-    if (file.fieldname === "song" && supportedAudioMimeTypes.includes(file.mimetype)) {  //audio file
-      cb(null, 'public/songs')
-    } else if (file.fieldname === "thumbnail" && supportedThumnbnailMimeTypes.includes(file.mimetype)) {  //image file
-      cb(null, 'public/thumbnails')
-    } else {
-      console.log("invalidFileType: ",file.mimetype);
-      cb({ message: 'Mime type not supported' })
-    }
-  },
-  filename: (req, file, cb) => {
-    let extension = path.extname(file.originalname);
-    let fileNameWithoutExt = path.basename(file.originalname, extension);
-    cb(null, fileNameWithoutExt + '-' + Date.now() + extension);
+const fileFilter = async (req, file, cb) => {
+  //Validate Request Body
+  const { error } = await songBody.validate(req.body);
+  if (error) cb({ message: error.details[0].message }, false);
+
+  // console.log("check",req.body, req.files);
+  if (file.fieldname === "song" && supportedAudioMimeTypes.includes(file.mimetype)) {  //audio file
+    cb(null, true)
+  } else if (file.fieldname === "thumbnail" && supportedThumnbnailMimeTypes.includes(file.mimetype)) {  //image file
+    cb(null, true)
+  } else {
+    console.log("invalidFileType: ",file.mimetype);
+    cb({ message: 'Mime type not supported' }, false)
   }
-})
-const upload = multer({ storage: storage }).any();
+  // cb(new Error('error'))
+}
+
+const upload = multer({ storage, fileFilter, limits: { fileSize: 6*ONE_MEGABYTE, files: 2 } }).any();
+
+const getBlobName = (file) => {
+  let extension = path.extname(file.originalname);
+  let fileNameWithoutExt = path.basename(file.originalname, extension);
+  return file.fieldname + "/" + fileNameWithoutExt + '-' + Date.now() + extension;
+};
 
 const service = {
   async findAll(req, res) {
@@ -76,11 +81,22 @@ const service = {
         }
         
         //check if files were stored
+        // console.log(req.files);
         if(!req.files) { //these files are added by multer after storing
           return res.send({ error: { message: "Error in saving file" }});
         }
         req.files.forEach(file => {
-          req.body[file.fieldname+'details'] = file;
+          let blobName = getBlobName(file);
+          req.body[file.fieldname+'details'] = {
+            fieldname: file.fieldname,
+            originalname: file.originalname,
+            encoding: file.encoding,
+            mimetype: file.mimetype,
+            size: file.size,
+            blobname: blobName
+          };
+          let response = azureServices.save(blobName, file.buffer);
+          if(response.error) return res.send({ error: { message: "Failed to upload files" }});
         });
         await db.songs.insertOne(req.body);
         res.send({ success: { message: "Song added successfully" }});
