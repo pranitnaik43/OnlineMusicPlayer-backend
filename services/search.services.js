@@ -27,7 +27,7 @@ const service = {
         return res.send({ error: { message: "No text found" }});
       }
       let result = await db.songs.find({$text: {$search: searchText}}, {score: {$meta: "textScore"}}).sort({score:{$meta:"textScore"}}).limit(10).toArray();
-      console.log(result)
+      // console.log(result)
       res.send(result);
     } 
     catch(err) {
